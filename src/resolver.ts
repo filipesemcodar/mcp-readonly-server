@@ -54,7 +54,11 @@ export async function controlHealthcheck(): Promise<boolean> {
   try {
     await control`select 1`;
     return true;
-  } catch {
+  } catch (err) {
+    // Log code/message (never the password or conn string) so a failing /health
+    // is diagnosable instead of a silent "listening -> SIGTERM" restart loop.
+    const e = err as { code?: string; message?: string };
+    console.error(JSON.stringify({ level: "error", msg: "control_healthcheck_failed", code: e.code, detail: e.message }));
     return false;
   }
 }

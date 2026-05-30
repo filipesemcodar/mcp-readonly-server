@@ -116,7 +116,11 @@ docker manifest inspect ghcr.io/filipesemcodar/mcp-readonly:1.0.0       # verify
 # DNS: mcp.example.com -> VPS IP
 dig +short mcp.example.com
 
-docker stack deploy -c stack.yaml mcp_readonly
+# --with-registry-auth is REQUIRED when the GHCR package is private: it
+# propagates the node's `docker login ghcr.io` credentials to the service.
+# Without it (or without being logged in) the task fails with "No such image".
+docker stack deploy -c stack.yaml mcp_readonly --with-registry-auth
+docker service ps mcp_readonly_mcp_readonly --no-trunc   # CURRENT STATE should reach Running and stay
 docker service logs -f mcp_readonly_mcp_readonly
 curl https://mcp.example.com/health
 ```
@@ -200,3 +204,49 @@ Run via a token, against the live endpoint:
 - [ ] Warm pool: 2nd query of the same org is noticeably faster than the 1st.
 - [ ] Logs contain no token, password, or connection string.
 - [ ] Coexistence: the existing stdio client keeps working while HTTP serves the same org.
+
+---
+
+## 8. Troubleshooting
+
+### Service loops: logs show `listening` then `shutting_down signal=SIGTERM`
+
+The app booted fine (env present) but `/health` is failing, so Swarm keeps
+killing the unhealthy task and restarting it (`order: start-first` shows a
+`complete` task next to a `starting` one). `/health` does `select 1` over the
+control connection — if that fails, you get this loop. The error is logged as
+`control_healthcheck_failed` with `code`/`detail` — check `docker service logs`.
+
+Common causes (in order):
+
+1. **Wrong `MCP_RESOLVER_CONN`** — password typo / a missing character, wrong
+   username, wrong host. (A single dropped char in the password is enough.)
+2. **Control plane not applied** or the `mcp_resolver` password doesn't match
+   the one in the conn string (section 0).
+3. **IPv6** — the direct host `db.<ref>.supabase.co` is IPv6-only; from an
+   IPv4-only node it gives `Network unreachable`. Use the IPv4 pooler
+   `aws-1-<region>.pooler.supabase.com:6543` with username `<role>.<ref>`.
+
+Validate the **exact** connection string before (re)deploying — this catches
+all three:
+
+```bash
+docker run --rm postgres:16-alpine \
+  psql "<your MCP_RESOLVER_CONN value>" -c "select current_user"
+# expect: mcp_resolver  (a row). Auth/host errors print the real reason here.
+```
+
+### `No such image` on deploy
+
+The Swarm node can't pull from GHCR. If the package is **private**:
+`docker login ghcr.io` on the node (token with `read:packages`) **and** deploy
+with `--with-registry-auth` (propagates the credential to the service). If the
+package is **public**, no auth is needed.
+
+### Pooler quirks (validated empirically)
+
+- The **shared/regional pooler host must be exact** (`aws-1-<region>...`, not a
+  generic `aws-0-...`) or you get `Tenant or user not found`.
+- Custom roles work through the pooler **only with the ref suffix**
+  (`mcp_resolver.<ref>`); without it → `no such user`.
+- Transaction mode (6543) requires `prepare: false` on the driver (already set).
