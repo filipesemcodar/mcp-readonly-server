@@ -1,0 +1,61 @@
+version: "3.7"
+
+# Docker Swarm stack for the read-only MCP server.
+# Deviations from the app's usual stack: no local PgBouncer and no placement on
+# database-01 — the Postgres is the remote Supabase.
+#
+# Replace filipesemcodar with your GHCR namespace before deploying.
+
+services:
+  mcp_readonly:
+    image: ghcr.io/filipesemcodar/mcp-readonly:latest
+    hostname: "{{.Service.Name}}.{{.Task.Slot}}"
+    networks:
+      - network_swarm_public
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - PROJECT_REF=YOUR_PROJECT_REF
+      - MCP_STATEMENT_GUARD=true
+      # ⚠️ SEGREDOS EM PLAINTEXT — preencha com valores reais SÓ na máquina de deploy.
+      # NÃO commite este arquivo preenchido (repo público → master key e senha do banco vazariam).
+      - MCP_MASTER_KEY=COLOQUE_A_MASTER_KEY_HEX_AQUI
+      - MCP_RESOLVER_CONN=postgresql://mcp_resolver:SENHA@db.YOUR_PROJECT_REF.supabase.co:6543/postgres?sslmode=require
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    deploy:
+      mode: replicated
+      replicas: 1 # stateless — bump to 2+ for HA (each replica keeps its own pools)
+      placement:
+        constraints:
+          - node.role == manager
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
+      labels:
+        - "traefik.enable=true"
+        - "traefik.docker.network=network_swarm_public" # CRITICAL: avoids 502
+        - "traefik.http.routers.mcp_readonly.rule=Host(`mcp.example.com`)"
+        - "traefik.http.routers.mcp_readonly.entrypoints=websecure"
+        - "traefik.http.routers.mcp_readonly.tls.certresolver=letsencryptresolver"
+        - "traefik.http.routers.mcp_readonly.service=mcp_readonly"
+        - "traefik.http.services.mcp_readonly.loadbalancer.server.port=3000"
+        # Rate limit per IP (tune to expected usage)
+        - "traefik.http.middlewares.mcp_ratelimit.ratelimit.average=20"
+        - "traefik.http.middlewares.mcp_ratelimit.ratelimit.burst=40"
+        - "traefik.http.routers.mcp_readonly.middlewares=mcp_ratelimit@docker"
+      update_config:
+        parallelism: 1
+        delay: 30s
+        order: start-first
+        failure_action: rollback
+
+networks:
+  network_swarm_public:
+    external: true
+    name: network_swarm_public

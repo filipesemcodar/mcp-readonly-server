@@ -1,0 +1,69 @@
+name: build-and-push
+
+# Builds the Docker image and pushes it to GHCR.
+# Auth uses the built-in GITHUB_TOKEN (no PAT needed). The image always lands at
+# ghcr.io/<repo-owner>/mcp-readonly, matching the tag pinned in stack.yaml.
+#
+# Triggers:
+#   - push a git tag like v1.0.0  -> publishes :1.0.0 (and :latest)
+#   - manual run (Actions tab)    -> publishes the version you type
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Image tag to publish (e.g. 1.0.0)"
+        required: true
+        default: "1.0.0"
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository_owner }}/mcp-readonly
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve image version
+        id: ver
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "version=${{ github.event.inputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.ver.outputs.version }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Summary
+        run: |
+          echo "Pushed \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.ver.outputs.version }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "Also tagged \`:latest\`" >> "$GITHUB_STEP_SUMMARY"

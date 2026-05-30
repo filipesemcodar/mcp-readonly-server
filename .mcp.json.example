@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "readonly-db": {
+      "type": "http",
+      "url": "https://mcp.example.com/mcp",
+      "headers": {
+        "Authorization": "Bearer TOKEN_DA_ORG"
+      }
+    }
+  }
+}
