@@ -13,11 +13,13 @@ export type Tenant = { orgId: string; pgRole: string; connStr: string };
 const cache = new Map<string, { value: Tenant; expires: number }>();
 
 function buildConnString(pgRole: string, password: string): string {
-  // Validated format for this project: role direct (no `.ref` suffix),
-  // host db.<ref>.supabase.co, port 6543 (Supavisor transaction mode).
+  // IPv4-compatible Supavisor pooler: the username carries the project ref
+  // (<role>.<ref>), host is the regional pooler, port 6543 (transaction mode →
+  // `prepare: false` required on the driver). The direct host db.<ref>.supabase.co
+  // is IPv6-only and unreachable from IPv4-only hosts.
   return (
-    `postgresql://${pgRole}:${encodeURIComponent(password)}` +
-    `@db.${config.projectRef}.supabase.co:6543/postgres?sslmode=require`
+    `postgresql://${pgRole}.${config.projectRef}:${encodeURIComponent(password)}` +
+    `@${config.dbHost}:6543/postgres?sslmode=require`
   );
 }
 

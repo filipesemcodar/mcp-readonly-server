@@ -16,11 +16,14 @@ services:
       - NODE_ENV=production
       - PORT=3000
       - PROJECT_REF=YOUR_PROJECT_REF
+      # Supavisor pooler host (IPv4-compatible). Direct host db.<ref>.supabase.co is IPv6-only.
+      - MCP_DB_HOST=aws-1-YOUR_REGION.pooler.supabase.com
       - MCP_STATEMENT_GUARD=true
       # ⚠️ SEGREDOS EM PLAINTEXT — preencha com valores reais SÓ na máquina de deploy.
       # NÃO commite este arquivo preenchido (repo público → master key e senha do banco vazariam).
       - MCP_MASTER_KEY=COLOQUE_A_MASTER_KEY_HEX_AQUI
-      - MCP_RESOLVER_CONN=postgresql://mcp_resolver:SENHA@db.YOUR_PROJECT_REF.supabase.co:6543/postgres?sslmode=require
+      # Pooler format: <role>.<ref>@<pooler-host>:6543 (transaction mode).
+      - MCP_RESOLVER_CONN=postgresql://mcp_resolver.YOUR_PROJECT_REF:SENHA@aws-1-YOUR_REGION.pooler.supabase.com:6543/postgres?sslmode=require
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://localhost:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 30s

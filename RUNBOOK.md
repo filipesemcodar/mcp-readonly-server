@@ -2,10 +2,18 @@
 
 Operational procedures. Constants for this project:
 
-- `PROJECT_REF = YOUR_PROJECT_REF` → host `db.YOUR_PROJECT_REF.supabase.co:6543`
+- `PROJECT_REF = YOUR_PROJECT_REF` (used as the pooler username suffix `<role>.<ref>`)
+- `MCP_DB_HOST = aws-1-<region>.pooler.supabase.com` (Supavisor pooler, IPv4)
 - Hostname: `mcp.example.com`
 - Registry: `ghcr.io/filipesemcodar/mcp-readonly`
-- Validated connection format (do not change): `postgresql://mcp_org_XXXXXXXX:SENHA@db.YOUR_PROJECT_REF.supabase.co:6543/postgres?sslmode=require` (role direct, no `.ref` suffix, port 6543 / transaction mode).
+- Validated connection format: `postgresql://mcp_org_XXXXXXXX.<ref>:SENHA@aws-1-<region>.pooler.supabase.com:6543/postgres?sslmode=require` (pooler username `<role>.<ref>`, port 6543 / transaction mode → `prepare:false`).
+
+> **Why the pooler, not the direct host:** `db.<ref>.supabase.co` resolves to
+> IPv6 only, so it's unreachable from IPv4-only hosts (e.g. most VPS / Docker
+> bridge networks). The Supavisor pooler `aws-1-<region>.pooler.supabase.com`
+> is IPv4-compatible and accepts the custom roles when the username carries the
+> ref suffix (`mcp_resolver.<ref>`, `mcp_org_X.<ref>`). Get the exact host in the
+> dashboard under *Connect → Transaction pooler*.
 
 ---
 
@@ -35,8 +43,9 @@ Docker secrets). Fill these two values on the deploy machine only:
 ```yaml
 environment:
   # ...
+  - MCP_DB_HOST=aws-1-<region>.pooler.supabase.com   # Supavisor pooler (IPv4)
   - MCP_MASTER_KEY=<openssl rand -hex 32>   # KEEP A COPY — provisioning needs it
-  - MCP_RESOLVER_CONN=postgresql://mcp_resolver:<senha>@db.YOUR_PROJECT_REF.supabase.co:6543/postgres?sslmode=require
+  - MCP_RESOLVER_CONN=postgresql://mcp_resolver.<ref>:<senha>@aws-1-<region>.pooler.supabase.com:6543/postgres?sslmode=require
 ```
 
 > ⚠️ The repo is public. NEVER commit a filled `stack.yaml`. Keep the committed
